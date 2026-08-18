@@ -52,23 +52,30 @@ npm run verify:subprocess
 npm run verify:terminal
 ```
 
-Then mount it into dsh — **edit the absolute paths in `adapter/cordis.yml` first**:
+Then install it into a dsh profile — it ships a `dsh.bundle` manifest, so it
+mounts by package name with no path editing:
 
 ```sh
-cd /path/to/deepseek-harness
-pnpm dsh --profile headless --patch /abs/path/to/dsh-worlds/adapter/cordis.yml "run: uname -a"
+dsh plugin --profile headless add github:frozo-ai/dsh-worlds
+```
+
+Add `dsh-worlds` to the profile's `dsh.profile.bundles`, then run normally —
+no `--patch` flag needed:
+
+```sh
+dsh --profile headless "use the terminal tool and run: tty; cat /etc/alpine-release"
+#   -> /dev/pts/0
+#      3.24.1
 ```
 
 ## The demo
 
 ```sh
 # harness A: create state, start a background process, then exit
-pnpm dsh --profile headless --patch .../cordis.yml \
-  "bash: echo session-state-v1 > /srv/state.txt && (nohup sleep 900 &)"
+dsh --profile headless "bash: echo session-state-v1 > /srv/state.txt && (nohup sleep 900 &)"
 
 # harness B: a brand new process, same world
-pnpm dsh --profile headless --patch .../cordis.yml \
-  "bash: cat /srv/state.txt; ps -o args | grep '[s]leep 900'"
+dsh --profile headless "bash: cat /srv/state.txt; ps -o args | grep '[s]leep 900'"
 #   -> session-state-v1
 #      sleep 900     <-- started by a harness that no longer exists
 ```

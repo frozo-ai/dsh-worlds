@@ -1,0 +1,70 @@
+# dsh-worlds bundle patch — installable via `dsh plugin add github:frozo-ai/dsh-worlds`.
+#
+# Swaps the LOCAL execution world for a Docker container. Both seams must move
+# together: cordis allows one implementation per service, so the stock providers
+# are disabled before ours are inserted.
+#
+#   fs-sandbox -> ctx.fs          (SandboxedFileSystem extends LocalFileSystem)
+#   subprocess -> ctx.subprocess  (@deepseek-ai/dsh-subprocess-local)
+
+- id: fs-sandbox
+  disabled: true
+
+- id: subprocess
+  disabled: true
+
+# Host confinement is retired, not faked. The sandbox seam scopes itself to the
+# host kernel by design: "Containers, microVMs, and remote execution replace the
+# surrounding capability seam instead." sandbox-local cannot fence a process
+# that is not on this kernel; the container is the boundary.
+- id: sandbox
+  disabled: true
+
+# bash-sandbox is the sandbox-consuming executor, loaded "instead of"
+# dsh-bash-local. permission-presets refuses to compose over an unconfined
+# executor, so it goes with it.
+- id: bash-sandbox
+  disabled: true
+
+- id: pwsh-sandbox
+  disabled: true
+
+- id: permission
+  disabled: true
+
+# sandbox-policy STAYS ENABLED: it only resolves per-session policy and enforces
+# nothing, and dsh-terminal-bash hard-requires ctx.sandboxPolicy. Mode is forced
+# to danger-full-access because tools gate their availability on it and host
+# confinement is meaningless here.
+- id: sandbox-policy
+  config:
+    mode: danger-full-access
+    workspaceRoot: !!js process.cwd()
+
+- insert:
+    - id: world
+      name: 'dsh-worlds/world'
+      config:
+        image: 'alpine:latest'
+        containerName: 'dsh-world'
+        workdir: '/workspace'
+
+    - id: fs-docker
+      name: 'dsh-worlds/fs'
+
+    - id: subprocess-docker
+      name: 'dsh-worlds/subprocess'
+
+    # Executors that delegate to the two seams above, so they land in the
+    # container with no fork required.
+    - id: bash-local
+      name: '@deepseek-ai/dsh-bash-local'
+
+    - id: terminal
+      name: '@deepseek-ai/dsh-terminal'
+
+    - id: terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
+
+    - id: tool-terminal
+      name: '@deepseek-ai/dsh-tool-terminal'

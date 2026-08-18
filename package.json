@@ -1,10 +1,9 @@
 {
   "name": "dsh-worlds",
-  "version": "0.0.1",
-  "description": "Remote execution worlds for DeepSeek Harness: run the agent's Bash, terminals, LSP and file tools inside a container. Zero dependencies.",
+  "version": "0.1.0",
+  "description": "Run the DeepSeek Harness agent's filesystem, bash and PTY terminals inside a Docker container, so execution state survives a harness restart.",
   "type": "module",
   "license": "MIT",
-  "private": true,
   "engines": {
     "node": ">=20"
   },
@@ -27,5 +26,29 @@
     "type": "git",
     "url": "git+https://github.com/frozo-ai/dsh-worlds.git"
   },
-  "homepage": "https://github.com/frozo-ai/dsh-worlds#readme"
+  "homepage": "https://github.com/frozo-ai/dsh-worlds#readme",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "exports": {
+    ".": "./adapter/index.ts",
+    "./world": "./adapter/world.ts",
+    "./fs": "./adapter/fs.ts",
+    "./subprocess": "./adapter/subprocess.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "adapter",
+    "src",
+    "cordis.patch.yml",
+    "README.md",
+    "SCOPE.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-fs": "*",
+    "@deepseek-ai/dsh-subprocess": "*",
+    "@deepseek-ai/cordis": "*"
+  }
 }
