@@ -9,9 +9,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node test/docker.test.mjs",
+    "test": "node test/docker.test.mjs && node test/collect.test.mjs",
     "verify": "node test/live-docker.mjs",
-    "verify:fs": "node test/live-fs.mjs"
+    "verify:fs": "node test/live-fs.mjs",
+    "verify:subprocess": "node test/live-subprocess.mjs"
   },
   "keywords": [
     "dsh-plugin",

@@ -153,6 +153,23 @@ export class DockerClient {
     if (res.status !== 200) throw new Error(`putArchive failed (${res.status}): ${res.raw.toString('utf8').slice(0, 200)}`)
   }
 
+  /** Create an exec instance; returns its id. Used by the streaming spawn path. */
+  async exec_create(id, config) {
+    const res = await api(this.socketPath, 'POST', `/containers/${id}/exec`, config)
+    if (res.status !== 201) throw new Error(`exec create failed (${res.status}): ${JSON.stringify(res.body)}`)
+    return res.body.Id
+  }
+
+  /** Inspect an exec instance (ExitCode, Pid, Running). */
+  async exec_inspect(execId) {
+    return (await api(this.socketPath, 'GET', `/exec/${execId}/json`)).body
+  }
+
+  /** Upload one file's bytes into `dirPath` inside the container. */
+  async putArchiveFile(id, dirPath, name, content) {
+    return this.putArchive(id, dirPath, buildTar(name, content))
+  }
+
   /** Run argv inside the container; returns {stdout, stderr, exitCode}. */
   async exec(id, argv, { cwd, env = [] } = {}) {
     const created = await api(this.socketPath, 'POST', `/containers/${id}/exec`, {

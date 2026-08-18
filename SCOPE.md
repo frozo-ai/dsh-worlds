@@ -89,3 +89,25 @@ propagation, 48,893 bytes / 5,000 lines intact across arbitrary frame boundaries
 background process both survive discarding the client and reconnecting fresh.
 
 `npm test` (11 checks, fake daemon) stays as the fast no-Docker path.
+
+## Step 3 status (in progress)
+
+`src/collect.mjs` — **done, 11 unit checks.** Offset-based non-consuming reads,
+tail window with `lossy` reporting, spill retained under cap and discarded when
+the whole-stream cap is exceeded, UTF-8 split across chunks.
+
+`src/subprocess.mjs` — **partially working.** Verified live: `resolveExecutable`
+(PATH + absolute + rejections), streaming exec with incremental demux, collect
+mode, exit code 0.
+
+**Known blocker:** busybox `setsid` forks and returns 0 instead of propagating
+the child's exit code, so a non-zero exit reads as 0. Confirmed: busybox setsid
+has no `-w` flag. Fix options, in order of preference:
+1. `apk add util-linux` in the image and use `setsid -w` (propagates exit code)
+2. Drop `setsid`; run `sh -c 'echo $$ > pidfile; exec "$@"'` and signal the pid
+   directly — loses new-process-group scoping, so tree-kill needs `pkill -P` or
+   a cgroup instead
+3. Use the container's cgroup for tree termination (most robust; most work)
+
+Until this is resolved, exit-code propagation and the tree-termination tests do
+not pass. Nothing in step 3 should be considered done.
