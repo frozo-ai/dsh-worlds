@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@deepseek-ai/dsh-fs": ["/Users/ashishdhiman/WORK/deepseek/deepseek-harness/packages/fs/fs/lib/types/index.d.ts"],
+      "@deepseek-ai/dsh-subprocess": ["/Users/ashishdhiman/WORK/deepseek/deepseek-harness/packages/subprocess/subprocess/lib/types/index.d.ts"],
+      "@deepseek-ai/cordis": ["/Users/ashishdhiman/WORK/deepseek/deepseek-harness/vendor/cordis/lib/types/index.d.ts"]
+    }
+  },
+  "include": ["*.ts"]
+}

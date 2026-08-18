@@ -56,10 +56,13 @@ export class DockerWorld extends Service {
   }
 
   /**
+   * Cordis runs this after construction (`Service.init`); there is no
+   * `start()`/`stop()` pair on the base class.
+   *
    * Reuse the named container when it already exists — that reuse is what
    * carries cwd, env, and running processes across a harness restart.
    */
-  override async start(): Promise<void> {
+  async [Service.init](): Promise<void> {
     if (!(await this.docker.ping())) {
       throw new Error(`Docker is not reachable at ${this.docker.socketPath}`)
     }
@@ -79,12 +82,10 @@ export class DockerWorld extends Service {
     await this.docker.exec(this.#containerId, ['mkdir', '-p', this.workdir])
   }
 
-  /**
-   * Deliberately leaves the container running. Removing it here would discard
-   * exactly the state this provider exists to preserve; lifecycle is the
-   * operator's call (`docker rm -f <name>`).
-   */
-  override async stop(): Promise<void> {}
+  // No disposer is registered on purpose. Cordis would unwind a `ctx.effect()`
+  // disposer on unload, and removing the container there would discard exactly
+  // the state this provider exists to preserve. Container lifecycle is the
+  // operator's call (`docker rm -f <name>`).
 }
 
 export default DockerWorld

@@ -137,16 +137,33 @@ The adapters are thin by design: branding (`FsTargetKey`/`FsVersion`), typed
 `spawnTerminal` throws a clear "not implemented" — a PTY needs the hijacked exec
 connection (step 5). Keep `dsh-terminal` on the local provider until then.
 
-### VERIFICATION STATUS: NONE
+### VERIFICATION STATUS: TYPECHECKS CLEAN
 
-This code has **not** been typechecked against the real `@deepseek-ai/dsh-fs`
-types and has **never been run**. The dsh monorepo had no `node_modules` and no
-build output; `pnpm install` was started but had not finished.
+`pnpm install` + `pnpm run build:lib:host` completed in the dsh checkout, and
+the adapter now compiles clean against the real `@deepseek-ai/dsh-fs`,
+`@deepseek-ai/dsh-subprocess`, and `@deepseek-ai/cordis` declarations:
 
-To verify:
 ```sh
-cd deepseek-harness && pnpm install && pnpm run build
+tsc -p adapter/tsconfig.json    # no errors
+```
+
+Three errors were found and fixed on the first pass:
+1. `Service` has **no `start()`/`stop()` lifecycle** — Cordis runs a method keyed
+   by the `Service.init` symbol after construction instead. Both overrides were
+   wrong; `start` became `async [Service.init]()` and `stop` was removed entirely
+   (registering a `ctx.effect()` disposer would unwind on unload and destroy the
+   container, i.e. exactly the state this provider exists to preserve).
+2. + 3. an implicit `any` in the `listDir` map callback.
+
+Notably the two failures I predicted — the `FsError` code cast and the
+`ctx.inject` signature — both typechecked as written.
+
+### STILL NOT DONE: runtime boot
+
+Typechecking proves the shapes line up, not that the plugin loads and serves
+`ctx.fs`. Booting needs `pnpm run build` (the full build, including the web
+frontend) and a configured model:
+
+```sh
 pnpm dsh web --patch /abs/path/to/dsh-worlds/adapter/cordis.yml
 ```
-Expect type errors on the first pass — the `FsError` code cast in `fs.ts:mapError`
-and the `ctx.inject` signature are the two most likely to need adjusting.

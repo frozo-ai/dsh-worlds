@@ -97,7 +97,7 @@ export class DockerFileSystem extends FileSystem {
     abortCheck(signal, 'listDir')
     try {
       const entries = await this.engine.listDir(target)
-      return entries.map((e) => ({
+      return entries.map((e: Record<string, unknown>) => ({
         ...e,
         target: brandTarget(e['target'] as { targetKey: string; displayPath: string }),
         ...(e['version'] !== undefined ? { version: FsVersion(e['version'] as string) } : {}),
