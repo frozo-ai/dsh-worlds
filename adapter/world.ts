@@ -82,6 +82,26 @@ export class DockerWorld extends Service {
       await this.docker.start(this._containerId)
     }
     await this.docker.exec(this._containerId, ['mkdir', '-p', this.workdir])
+    await this._ensureRequirements()
+  }
+
+  /**
+   * The bash executor invokes `bash` by name, and busybox images ship only
+   * `sh`. Provision the shell (plus `procps` for the process-tree walk the
+   * subprocess provider uses) when the image lacks them.
+   */
+  async _ensureRequirements(): Promise<void> {
+    const probe = await this.docker.exec(this._containerId, ['sh', '-c', 'command -v bash >/dev/null && echo ok || echo missing'])
+    if (probe.stdout.trim() === 'ok') return
+    const install = await this.docker.exec(this._containerId, [
+      'sh', '-c',
+      'if command -v apk >/dev/null; then apk add --no-cache bash procps >/dev/null 2>&1; ' +
+      'elif command -v apt-get >/dev/null; then apt-get update -qq && apt-get install -y -qq bash procps >/dev/null 2>&1; fi; ' +
+      'command -v bash >/dev/null && echo ok || echo failed',
+    ])
+    if (install.stdout.trim() !== 'ok') {
+      throw new Error(`dsh-worlds: image "${this.image}" has no bash and it could not be installed`)
+    }
   }
 
   // No disposer is registered on purpose. Cordis would unwind a `ctx.effect()`

@@ -207,3 +207,37 @@ Two runtime bugs that only a real boot could find:
   provider creates that path inside the container. Path-transparent and it
   works, but real workspace access needs a bind mount (`binds` in WorldConfig).
 - `spawnTerminal` still unimplemented (step 5).
+
+
+## DURABILITY DEMO — PROVEN
+
+Run 1 (harness process A):
+```
+bash: mkdir -p /srv && echo session-state-v1 > /srv/state.txt
+      && (nohup sleep 900 &) && cat /srv/state.txt && ps | grep -c sleep
+  -> session-state-v1
+     2
+```
+Process A exits. Checked from outside: state file intact, 1 sleep alive.
+
+Run 2 (harness process B — a brand new process, same world):
+```
+bash: cat /srv/state.txt; ps -o args | grep '[s]leep 900'
+  -> session-state-v1
+     sleep 900        <-- started by a harness that no longer exists
+```
+
+This is the counter-example to `packages/terminal/terminal/README.md`:
+> "Sessions are process-local and are not restored after a harness restart."
+
+No CRIU, no microVM. A Docker container simply outlives its client, and the
+world is addressed by a stable container name.
+
+## Two more runtime findings
+
+4. **cwd must be created before exec.** dsh passes the HOST workspace path as
+   `WorkingDir`; Docker fails the exec outright when it does not exist in the
+   container. The subprocess provider now `mkdir -p`s it.
+5. **Alpine has no `bash`.** The bash executor invokes `bash` by name and
+   busybox ships only `sh`. `DockerWorld` now provisions `bash` + `procps`
+   (apk or apt) when the image lacks them, and fails loudly if it cannot.

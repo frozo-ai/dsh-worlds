@@ -137,9 +137,15 @@ export class DockerSubprocess {
       await this.docker.putArchiveFile(this.id, '/tmp', stdinFile.split('/').pop(), Buffer.from(spec.stdio.stdin.data, 'utf8'))
     }
 
+    // dsh passes the HOST workspace path as cwd; that path does not exist in a
+    // fresh container, and Docker fails the exec outright when WorkingDir is
+    // missing. Create it so the container world mirrors the host layout.
+    const cwd = spec.cwd ?? this.defaultCwd
+    await this.#sh(`mkdir -p ${q(cwd)}`)
+
     const created = await this.docker.exec_create(this.id, {
       Cmd: wrapArgv([...spec.argv], pidFile, stdinFile),
-      WorkingDir: spec.cwd ?? this.defaultCwd,
+      WorkingDir: cwd,
       Env: toDockerEnv(spec.env),
       AttachStdin: false,
       AttachStdout: true,
