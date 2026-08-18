@@ -70,9 +70,10 @@ client by default, so v0 needs no CRIU at all.
 
 Step 1 complete and tested. Steps 2–5 are the real project.
 
-**Blocker on this machine:** Docker Desktop is uninstalled — `/usr/local/bin/docker`
-is a broken symlink to a deleted `/Applications/Docker.app`, and `/_ping` on the
-socket returns `000`. Tests run against a fake daemon speaking the real wire
-protocol, so the client code is exercised; it has **not** been run against a real
-Docker daemon yet. Install Docker (or OrbStack/Colima) and `npm run verify` will
-prove it end-to-end.
+**Verified against real Docker 29.7.2** (Docker Desktop, aarch64) — `npm run verify`,
+12/12 live checks. Confirmed: stdout/stderr demux on real framing, non-zero exit
+propagation, 48,893 bytes / 5,000 lines intact across arbitrary frame boundaries,
+`WorkingDir` honoured, and the durability demo — file state **and** a running
+background process both survive discarding the client and reconnecting fresh.
+
+`npm test` (11 checks, fake daemon) stays as the fast no-Docker path.
