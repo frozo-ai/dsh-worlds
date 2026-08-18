@@ -1,7 +1,22 @@
-# Opt-in overlay: replace the local execution world with a Docker container.
+# Opt-in overlay: replace the LOCAL execution world with a Docker container.
+#
+# Both seams must be swapped together -- they form one execution world. And the
+# stock providers must be disabled first: cordis allows one implementation per
+# service, so registering a second ctx.fs/ctx.subprocess throws.
+#
+#   fs-sandbox  -> registers ctx.fs  (SandboxedFileSystem extends LocalFileSystem)
+#   subprocess  -> registers ctx.subprocess (@deepseek-ai/dsh-subprocess-local)
+#
 # Usage from a dsh checkout:
 #   pnpm dsh web --patch /abs/path/to/dsh-worlds/adapter/cordis.yml
 # Plugin paths MUST be absolute -- rewrite the three below for your machine.
+
+- id: fs-sandbox
+  disabled: true
+
+- id: subprocess
+  disabled: true
+
 - insert:
     - id: world
       name: '/Users/ashishdhiman/WORK/deepseek/dsh-worlds/adapter/world.ts'
