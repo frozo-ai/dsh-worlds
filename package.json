@@ -1,0 +1,14 @@
+{
+  "name": "dsh-worlds",
+  "version": "0.0.1",
+  "description": "Remote execution worlds for DeepSeek Harness: run the agent's Bash, terminals, LSP and file tools inside a container. Zero dependencies.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node test/docker.test.mjs",
+    "verify": "node test/live-docker.mjs"
+  },
+  "keywords": ["dsh-plugin", "deepseek-harness", "dsh", "docker", "sandbox", "execution-world"]
+}
