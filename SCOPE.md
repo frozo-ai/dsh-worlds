@@ -117,3 +117,36 @@ redirected in, avoiding Docker's hijacked connection entirely.
 **Still not implemented:** `stdin: 'pipe'` (ongoing protocol writes) genuinely
 needs the hijacked connection. It rejects `done` with a clear message rather than
 hanging. This is what an LSP transport would need, so step 5 depends on it.
+
+## Step 6 — TS/Cordis adapter (WRITTEN, NOT YET VERIFIED)
+
+`adapter/` binds the tested JS engines to the real seams:
+
+| File | Role |
+|---|---|
+| `world.ts` | `DockerWorld` service (`ctx.world`) — container lifecycle. Reuses a **named** container across restarts; `stop()` deliberately leaves it running |
+| `fs.ts` | `DockerFileSystem extends FileSystem` → registers `ctx.fs` |
+| `subprocess.ts` | `DockerSubprocessRuntime extends SubprocessRuntime` → registers `ctx.subprocess` |
+| `engines.d.ts` | ambient types for the zero-dep `.mjs` engines |
+| `cordis.yml` | overlay patch that mounts all three |
+
+The adapters are thin by design: branding (`FsTargetKey`/`FsVersion`), typed
+`FsError` mapping, and abort checks live here; container mechanics stay in the
+94-check engines.
+
+`spawnTerminal` throws a clear "not implemented" — a PTY needs the hijacked exec
+connection (step 5). Keep `dsh-terminal` on the local provider until then.
+
+### VERIFICATION STATUS: NONE
+
+This code has **not** been typechecked against the real `@deepseek-ai/dsh-fs`
+types and has **never been run**. The dsh monorepo had no `node_modules` and no
+build output; `pnpm install` was started but had not finished.
+
+To verify:
+```sh
+cd deepseek-harness && pnpm install && pnpm run build
+pnpm dsh web --patch /abs/path/to/dsh-worlds/adapter/cordis.yml
+```
+Expect type errors on the first pass — the `FsError` code cast in `fs.ts:mapError`
+and the `ctx.inject` signature are the two most likely to need adjusting.

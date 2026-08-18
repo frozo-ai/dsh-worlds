@@ -1,0 +1,17 @@
+# Opt-in overlay: replace the local execution world with a Docker container.
+# Usage from a dsh checkout:
+#   pnpm dsh web --patch /abs/path/to/dsh-worlds/adapter/cordis.yml
+# Plugin paths MUST be absolute -- rewrite the three below for your machine.
+- insert:
+    - id: world
+      name: '/Users/ashishdhiman/WORK/deepseek/dsh-worlds/adapter/world.ts'
+      config:
+        image: 'alpine:latest'
+        containerName: 'dsh-world'
+        workdir: '/workspace'
+
+    - id: fs-docker
+      name: '/Users/ashishdhiman/WORK/deepseek/dsh-worlds/adapter/fs.ts'
+
+    - id: subprocess-docker
+      name: '/Users/ashishdhiman/WORK/deepseek/dsh-worlds/adapter/subprocess.ts'
