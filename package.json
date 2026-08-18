@@ -10,7 +10,8 @@
   },
   "scripts": {
     "test": "node test/docker.test.mjs",
-    "verify": "node test/live-docker.mjs"
+    "verify": "node test/live-docker.mjs",
+    "verify:fs": "node test/live-fs.mjs"
   },
   "keywords": [
     "dsh-plugin",

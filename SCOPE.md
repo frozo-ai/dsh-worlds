@@ -31,10 +31,19 @@ problems: no direct process access, everything over a transport.
 
 | Difficulty | Methods | Docker mechanism |
 |---|---|---|
-| Easy — pure logic | `resolve` `processPath` `fileUrl` `contains` | path math, no daemon call |
-| Easy | `readText` `readBytes` `listDir` `stat` `lstat` | `GET /containers/{id}/archive` (tar) or `exec` |
-| Medium | `writeText` `editText` | `PUT /containers/{id}/archive`, atomic-write semantics |
-| Medium | `streamText` | chunked archive read, backpressure |
+| ✅ Easy — pure logic | `resolve` `processPath` `fileUrl` `contains` | path math, no daemon call |
+| ✅ Easy | `readText` `readBytes` `listDir` `stat` `lstat` | `exec` + base64 (output is not ARG_MAX-bound) |
+| ✅ Medium | `writeText` `editText` | `PUT .../archive` to temp name + `mv` = atomic publication |
+| ✅ Medium | `streamText` | chunked decode |
+
+All 12 implemented in `src/fs.mjs` (236 lines) with the full `FsErrorCode`
+taxonomy: `FS_NOT_FOUND` `FS_NOT_DIRECTORY` `FS_NOT_TEXT` `FS_NOT_REGULAR_FILE`
+`FS_TOO_LARGE` `FS_STALE_VERSION` `FS_NOT_OBSERVED` `FS_AMBIGUOUS_EDIT`
+`FS_EDIT_NOT_FOUND` `FS_IO_ERROR`.
+
+**Not yet done:** the TypeScript/Cordis binding. `DockerFs` implements the seam's
+method surface and semantics; registering as `ctx.fs` needs a thin TS adapter
+extending `FileSystem` from `@deepseek-ai/dsh-fs`, built inside the dsh monorepo.
 
 ### `ctx.subprocess` — 3 abstract methods, rich handles
 
@@ -55,8 +64,11 @@ is still labelled a POC.
 
 ## Build order
 
-1. ✅ **Docker Engine API client + stream demux** — done, 11 tests passing
-2. `fs` provider over the archive API — biggest win per line, unblocks all file tools
+1. ✅ **Docker Engine API client + stream demux** — 11 unit + 12 live checks
+2. ✅ **`fs` provider — all 12 methods** — 38 live checks. Writes go through
+   `PUT /containers/{id}/archive` (minimal USTAR writer, no deps): a shell
+   command line is capped by ARG_MAX, so base64-on-argv died at ~200KB.
+   Verified byte-identical to 5MB in 217ms.
 3. `subprocess.spawn` pipe + collect — unblocks Bash
 4. `terminate` / `waitForExit` tree semantics
 5. `spawnTerminal` PTY — the hard one, unblocks persistent terminals + LSP

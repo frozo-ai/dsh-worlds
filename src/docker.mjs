@@ -8,16 +8,17 @@ export const DEFAULT_SOCKET = process.env.DOCKER_HOST_SOCKET ?? '/var/run/docker
  * One Docker Engine API call.
  * @returns {Promise<{status:number, body:any, raw:Buffer}>}
  */
-export function api(socketPath, method, path, body, { raw = false } = {}) {
+export function api(socketPath, method, path, body, { raw = false, contentType = 'application/json' } = {}) {
   return new Promise((resolve, reject) => {
-    const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body))
+    const payload =
+      body === undefined ? undefined : Buffer.isBuffer(body) ? body : Buffer.from(JSON.stringify(body))
     const req = request(
       {
         socketPath,
         method,
         path,
         headers: {
-          'content-type': 'application/json',
+          'content-type': contentType,
           ...(payload ? { 'content-length': payload.length } : {}),
         },
       },
@@ -81,6 +82,31 @@ export function frame(type, text) {
   return Buffer.concat([header, payload])
 }
 
+/**
+ * Minimal USTAR archive containing one regular file. Docker's archive endpoint
+ * takes a tar stream, which is the only way to move arbitrarily large content
+ * into a container -- a shell command line is capped by ARG_MAX.
+ */
+export function buildTar(name, content) {
+  const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8')
+  const header = Buffer.alloc(512)
+  header.write(name.slice(0, 100), 0, 'utf8')          // name
+  header.write('000644 \0', 100)                       // mode
+  header.write('000000 \0', 108)                       // uid
+  header.write('000000 \0', 116)                       // gid
+  header.write(data.length.toString(8).padStart(11, '0') + ' ', 124)   // size
+  header.write(Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + ' ', 136) // mtime
+  header.write('        ', 148)                         // checksum placeholder (spaces)
+  header.write('0', 156)                                // typeflag: regular file
+  header.write('ustar\0', 257)
+  header.write('00', 263)
+  let sum = 0
+  for (const byte of header) sum += byte
+  header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148)
+  const padding = Buffer.alloc((512 - (data.length % 512)) % 512)
+  return Buffer.concat([header, data, padding, Buffer.alloc(1024)]) // 2 zero blocks terminate
+}
+
 export class DockerClient {
   constructor(socketPath = DEFAULT_SOCKET) {
     this.socketPath = socketPath
@@ -115,6 +141,18 @@ export class DockerClient {
   async remove(id, force = true) {
     await api(this.socketPath, 'DELETE', `/containers/${id}?force=${force}&v=true`)
   }
+  /** Upload a tar stream, extracted at `dirPath` inside the container. */
+  async putArchive(id, dirPath, tar) {
+    const res = await api(
+      this.socketPath,
+      'PUT',
+      `/containers/${id}/archive?path=${encodeURIComponent(dirPath)}`,
+      tar,
+      { raw: true, contentType: 'application/x-tar' },
+    )
+    if (res.status !== 200) throw new Error(`putArchive failed (${res.status}): ${res.raw.toString('utf8').slice(0, 200)}`)
+  }
+
   /** Run argv inside the container; returns {stdout, stderr, exitCode}. */
   async exec(id, argv, { cwd, env = [] } = {}) {
     const created = await api(this.socketPath, 'POST', `/containers/${id}/exec`, {
