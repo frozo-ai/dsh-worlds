@@ -158,12 +158,40 @@ Three errors were found and fixed on the first pass:
 Notably the two failures I predicted — the `FsError` code cast and the
 `ctx.inject` signature — both typechecked as written.
 
-### STILL NOT DONE: runtime boot
-
-Typechecking proves the shapes line up, not that the plugin loads and serves
-`ctx.fs`. Booting needs `pnpm run build` (the full build, including the web
-frontend) and a configured model:
+### RUNTIME VERIFIED — the agent wrote into the container
 
 ```sh
-pnpm dsh web --patch /abs/path/to/dsh-worlds/adapter/cordis.yml
+DEEPSEEK_BASE_URL=<openai-compatible> DSH_MODEL=<model> \
+  pnpm dsh --profile headless --patch /abs/path/to/adapter/cordis.yml \
+  "Write hello-from-container into proof.txt, then cat it"
 ```
+
+Result: the agent's `write` went through `ctx.fs` -> DockerFileSystem -> the
+container. Verified from outside:
+
+| Check | Result |
+|---|---|
+| file inside container | `/Users/.../deepseek-harness/proof.txt` |
+| contents | `hello-from-container` |
+| file on host | **absent** |
+
+Two runtime bugs that only a real boot could find:
+
+1. **`#private` fields break through cordis's service Proxy** —
+   `Cannot read private member #engine from an object whose class did not
+   declare it`. Every tool call failed. All `#private` fields in the adapters
+   are now ordinary `_`-prefixed properties. Typecheck could never have caught
+   this.
+2. The overlay must **disable** `fs-sandbox` and `subprocess` (found via
+   `--dump-config`), since cordis allows one implementation per service.
+
+### Known gaps after first boot
+
+- **Bash does not run**: the tool reports "host lacking a sandbox backend". The
+  `ctx.sandbox` seam still points at the local backend, which cannot fence a
+  process living in a container. Either mount a no-op sandbox for the container
+  world or teach the seam about it.
+- **Path mirroring**: dsh passes the *host* workspace path as cwd, and the
+  provider creates that path inside the container. Path-transparent and it
+  works, but real workspace access needs a bind mount (`binds` in WorldConfig).
+- `spawnTerminal` still unimplemented (step 5).

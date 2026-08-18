@@ -38,7 +38,9 @@ export class DockerWorld extends Service {
   readonly containerName: string
   readonly workdir: string
   readonly binds: string[]
-  #containerId: string | undefined
+  /** Non-private on purpose: cordis proxies services, and #private fields
+   * are unreadable through a Proxy. */
+  _containerId: string | undefined
 
   constructor(ctx: Context, config: WorldConfig = {}) {
     super(ctx, 'world')
@@ -51,8 +53,8 @@ export class DockerWorld extends Service {
 
   /** Container id, once the world has started. */
   get containerId(): string {
-    if (this.#containerId === undefined) throw new Error('world not started')
-    return this.#containerId
+    if (this._containerId === undefined) throw new Error('world not started')
+    return this._containerId
   }
 
   /**
@@ -68,18 +70,18 @@ export class DockerWorld extends Service {
     }
     const existing = await this.docker.inspect(this.containerName)
     if (existing?.Id) {
-      this.#containerId = existing.Id
+      this._containerId = existing.Id
       if (!existing.State?.Running) await this.docker.start(existing.Id)
     } else {
-      this.#containerId = await this.docker.createContainer({
+      this._containerId = await this.docker.createContainer({
         image: this.image,
         name: this.containerName,
         workdir: this.workdir,
         binds: this.binds,
       })
-      await this.docker.start(this.#containerId)
+      await this.docker.start(this._containerId)
     }
-    await this.docker.exec(this.#containerId, ['mkdir', '-p', this.workdir])
+    await this.docker.exec(this._containerId, ['mkdir', '-p', this.workdir])
   }
 
   // No disposer is registered on purpose. Cordis would unwind a `ctx.effect()`

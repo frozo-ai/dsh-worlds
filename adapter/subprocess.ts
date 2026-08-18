@@ -15,18 +15,20 @@ import type { Context } from '@deepseek-ai/cordis'
 import { DockerSubprocess } from '../src/subprocess.mjs'
 
 export class DockerSubprocessRuntime extends SubprocessRuntime {
-  #engine: InstanceType<typeof DockerSubprocess> | undefined
+  /** Non-private on purpose: cordis proxies services, and #private fields
+   * are unreadable through a Proxy. */
+  _engine: InstanceType<typeof DockerSubprocess> | undefined
 
   constructor(ctx: Context) {
     super(ctx)
     this.ctx.inject(['world'], (scoped) => {
-      this.#engine = new DockerSubprocess(scoped.world.docker, scoped.world.containerId, scoped.world.workdir)
+      this._engine = new DockerSubprocess(scoped.world.docker, scoped.world.containerId, scoped.world.workdir)
     })
   }
 
   get engine(): InstanceType<typeof DockerSubprocess> {
-    if (this.#engine === undefined) throw new Error('world not started')
-    return this.#engine
+    if (this._engine === undefined) throw new Error('world not started')
+    return this._engine
   }
 
   async resolveExecutable(

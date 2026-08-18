@@ -37,18 +37,20 @@ const brandTarget = (t: { targetKey: string; displayPath: string }): FsTarget =>
 })
 
 export class DockerFileSystem extends FileSystem {
-  #engine: InstanceType<typeof DockerFs> | undefined
+  /** Non-private on purpose: cordis proxies services, and #private fields
+   * are unreadable through a Proxy. */
+  _engine: InstanceType<typeof DockerFs> | undefined
 
   constructor(ctx: Context) {
     super(ctx)
     this.ctx.inject(['world'], (scoped) => {
-      this.#engine = new DockerFs(scoped.world.docker, scoped.world.containerId, scoped.world.workdir)
+      this._engine = new DockerFs(scoped.world.docker, scoped.world.containerId, scoped.world.workdir)
     })
   }
 
   get engine(): InstanceType<typeof DockerFs> {
-    if (this.#engine === undefined) throw new FsError('world not started', 'FS_IO_ERROR')
-    return this.#engine
+    if (this._engine === undefined) throw new FsError('world not started', 'FS_IO_ERROR')
+    return this._engine
   }
 
   async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
