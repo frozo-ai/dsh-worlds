@@ -187,10 +187,22 @@ Two runtime bugs that only a real boot could find:
 
 ### Known gaps after first boot
 
-- **Bash does not run**: the tool reports "host lacking a sandbox backend". The
-  `ctx.sandbox` seam still points at the local backend, which cannot fence a
-  process living in a container. Either mount a no-op sandbox for the container
-  world or teach the seam about it.
+- ~~Bash does not run~~ **FIXED.** The seam's own doc gave the answer:
+  "Containers, microVMs, and remote execution replace the surrounding capability
+  seam instead; this service shares the host kernel and filesystem." So the fix
+  is not to fake a sandbox but to retire host confinement: disable `sandbox`,
+  `sandbox-policy`, `bash-sandbox`, `pwsh-sandbox`, and swap in
+  `@deepseek-ai/dsh-bash-local`, which spawns through `ctx.subprocess` and
+  therefore lands in the container.
+
+  `permission-presets` then refuses to compose over an unconfined executor
+  ("presets bundle a sandbox mode"), so it is disabled too.
+  **TRADE-OFF:** per-call sandbox modes (read-only / workspace-write) are no
+  longer enforced at the bash layer. The container is the boundary now, which is
+  coarser — it fences the host, not the workspace.
+
+  Verified: agent ran bash and reported `Alpine Linux 3.24.1`, kernel
+  `linuxkit`, `aarch64`, hostname = the container id — from a macOS host.
 - **Path mirroring**: dsh passes the *host* workspace path as cwd, and the
   provider creates that path inside the container. Path-transparent and it
   works, but real workspace access needs a bind mount (`binds` in WorldConfig).

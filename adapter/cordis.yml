@@ -11,10 +11,47 @@
 #   pnpm dsh web --patch /abs/path/to/dsh-worlds/adapter/cordis.yml
 # Plugin paths MUST be absolute -- rewrite the three below for your machine.
 
+# --- swap the execution world ---
+# ctx.fs (SandboxedFileSystem extends LocalFileSystem)
 - id: fs-sandbox
   disabled: true
 
+# ctx.subprocess (local process trees)
 - id: subprocess
+  disabled: true
+
+# --- retire host confinement ---
+# The sandbox seam explicitly scopes itself to the host kernel: "Containers,
+# microVMs, and remote execution replace the surrounding capability seam
+# instead; this service shares the host kernel and filesystem." The container
+# IS the boundary here, so these rows are not just unnecessary -- sandbox-local
+# cannot fence a process that does not live on this kernel.
+- id: sandbox
+  disabled: true
+
+- id: sandbox-policy
+  disabled: true
+
+# bash-sandbox is the sandbox-consuming executor, loaded "instead of"
+# dsh-bash-local. Swap back to bash-local, which spawns through ctx.subprocess
+# -- now the Docker provider.
+- id: bash-sandbox
+  disabled: true
+
+- id: pwsh-sandbox
+  disabled: true
+
+# permission-presets refuses to compose over an unconfined executor:
+# "the mounted bash executor does not confine (no sandboxMode) -- presets bundle
+# a sandbox mode, so composing this plugin over an unconfined executor is a
+# misconfiguration". That guard assumes host-sandboxed bash. In a container
+# world the container is the boundary, so the preset layer is retired with it.
+#
+# TRADE-OFF: per-call sandbox MODES (read-only / workspace-write) are no longer
+# enforced at the bash layer. Confinement is now the container's, which is
+# coarser -- it fences the host, not the workspace. Approval prompts for other
+# tools are unaffected.
+- id: permission
   disabled: true
 
 - insert:
@@ -30,3 +67,8 @@
 
     - id: subprocess-docker
       name: '/Users/ashishdhiman/WORK/deepseek/dsh-worlds/adapter/subprocess.ts'
+
+    # Unsandboxed bash executor: it delegates every execution-world operation
+    # to ctx.subprocess, so it lands in the container with no fork required.
+    - id: bash-local
+      name: '@deepseek-ai/dsh-bash-local'
