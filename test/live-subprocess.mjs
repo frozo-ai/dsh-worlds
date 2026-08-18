@@ -12,8 +12,9 @@ const stdio = (o = {}) => ({ stdin: 'ignore', stdout: COLLECT, stderr: COLLECT, 
 // pure helpers
 assert.deepEqual(toDockerEnv({ A: '1', B: undefined }), ['A=1'])
 ok('toDockerEnv drops tombstones')
-assert.ok(wrapArgv(['echo', 'hi'], '/tmp/p').includes('setsid'))
-ok('wrapArgv leads its own process group via setsid')
+assert.ok(!wrapArgv(['echo', 'hi'], '/tmp/p').includes('setsid'), 'setsid swallows exit codes in busybox')
+assert.ok(wrapArgv(['echo', 'hi'], '/tmp/p').join(' ').includes('exec "$@"'))
+ok('wrapArgv execs in place so exit status propagates')
 
 const docker = new DockerClient()
 try { await docker.remove(NAME) } catch {}
@@ -59,6 +60,15 @@ h = sp.spawn({ argv: ['cat'], cwd: '/workspace', stdio: stdio({ stdin: { data: '
 out = await h.done
 assert.equal(h.collected.stdout.readFrom(0).text, 'piped-input\n')
 ok('stdin { data } written and closed')
+
+// stdin 'pipe' is explicitly not implemented yet
+// spawn() returns synchronously, so a spawn-level failure surfaces on `done`
+// rejecting -- which is exactly what the seam contract specifies.
+await assert.rejects(
+  sp.spawn({ argv: ['cat'], cwd: '/workspace', stdio: stdio({ stdin: 'pipe' }), graceMs: 1000 }).done,
+  /not implemented/,
+)
+ok("stdin 'pipe' rejects done() loudly instead of hanging")
 
 // pipe mode: live streaming
 h = sp.spawn({ argv: ['sh', '-c', 'echo a; echo b; echo c'], cwd: '/workspace', stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' }, graceMs: 2000 })

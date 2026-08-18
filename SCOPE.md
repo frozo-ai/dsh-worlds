@@ -69,7 +69,9 @@ is still labelled a POC.
    `PUT /containers/{id}/archive` (minimal USTAR writer, no deps): a shell
    command line is capped by ARG_MAX, so base64-on-argv died at ~200KB.
    Verified byte-identical to 5MB in 217ms.
-3. `subprocess.spawn` pipe + collect — unblocks Bash
+3. ✅ **`subprocess.spawn`** — 22 live checks. resolveExecutable, collect +
+   pipe stdio, batch stdin, cwd/env, exit codes, tree-scoped terminate
+   escalation, abort signal, waitForExit
 4. `terminate` / `waitForExit` tree semantics
 5. `spawnTerminal` PTY — the hard one, unblocks persistent terminals + LSP
 
@@ -90,7 +92,7 @@ background process both survive discarding the client and reconnecting fresh.
 
 `npm test` (11 checks, fake daemon) stays as the fast no-Docker path.
 
-## Step 3 status (in progress)
+## Step 3 status — DONE (22 live checks)
 
 `src/collect.mjs` — **done, 11 unit checks.** Offset-based non-consuming reads,
 tail window with `lossy` reporting, spill retained under cap and discarded when
@@ -100,14 +102,18 @@ the whole-stream cap is exceeded, UTF-8 split across chunks.
 (PATH + absolute + rejections), streaming exec with incremental demux, collect
 mode, exit code 0.
 
-**Known blocker:** busybox `setsid` forks and returns 0 instead of propagating
-the child's exit code, so a non-zero exit reads as 0. Confirmed: busybox setsid
-has no `-w` flag. Fix options, in order of preference:
-1. `apk add util-linux` in the image and use `setsid -w` (propagates exit code)
-2. Drop `setsid`; run `sh -c 'echo $$ > pidfile; exec "$@"'` and signal the pid
-   directly — loses new-process-group scoping, so tree-kill needs `pkill -P` or
-   a cgroup instead
-3. Use the container's cgroup for tree termination (most robust; most work)
+**Resolved.** busybox `setsid` forks and returns 0, swallowing the child's exit
+code (and has no `-w` flag). Fix: drop `setsid` entirely and `exec "$@"` in place
+so the recorded pid IS the process and its status propagates unchanged.
 
-Until this is resolved, exit-code propagation and the tree-termination tests do
-not pass. Nothing in step 3 should be considered done.
+Without a process group to signal, termination walks the process tree instead —
+a recursive `ps -o pid,ppid` walk that signals children depth-first before the
+parent, so a parent cannot reap-and-orphan its descendants mid-walk. Verified:
+`sh -c 'sleep 30 & sleep 30'` leaves zero orphans after `terminate()`.
+
+**Also resolved:** batch stdin (`{ data }`) is staged as a container-side file and
+redirected in, avoiding Docker's hijacked connection entirely.
+
+**Still not implemented:** `stdin: 'pipe'` (ongoing protocol writes) genuinely
+needs the hijacked connection. It rejects `done` with a clear message rather than
+hanging. This is what an LSP transport would need, so step 5 depends on it.

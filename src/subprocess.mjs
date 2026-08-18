@@ -1,7 +1,7 @@
 // dsh-worlds subprocess engine: implements the `ctx.subprocess` spawn surface
 // over a Docker container. Contract: packages/subprocess/subprocess/src/{index,types}.ts
 import { request } from 'node:http'
-import { PassThrough, Writable } from 'node:stream'
+import { PassThrough } from 'node:stream'
 import { randomUUID } from 'node:crypto'
 import { demux } from './docker.mjs'
 import { CollectBuffer } from './collect.mjs'
@@ -17,14 +17,40 @@ export function toDockerEnv(env) {
 }
 
 /**
- * Wrap argv so the child leads its own process group, and record that pgid.
- * `setsid` makes the shell a session leader (pgid == pid); `exec "$@"` then
- * replaces it in place, so the recorded pid IS the group leader. That is what
- * makes termination tree-scoped rather than child-only.
+ * Wrap argv so the root pid is recorded, then `exec` replaces the shell in
+ * place — so the recorded pid IS the process and its exit status propagates
+ * unchanged.
+ *
+ * Deliberately NOT using `setsid`: busybox's setsid forks and returns 0,
+ * swallowing the child's exit code (and it has no `-w` flag to wait). Without
+ * a process group to signal, termination walks the process tree instead —
+ * see {@link KILL_TREE_SH}.
  */
-export function wrapArgv(argv, pidFile) {
-  return ['setsid', 'sh', '-c', `echo $$ > ${q(pidFile)}; exec "$@"`, 'sh', ...argv]
+export function wrapArgv(argv, pidFile, stdinFile) {
+  const redirect = stdinFile ? ` < ${q(stdinFile)}` : ''
+  return ['sh', '-c', `echo $$ > ${q(pidFile)}; exec "$@"${redirect}`, 'sh', ...argv]
 }
+
+/**
+ * Recursive tree kill using only busybox primitives. Signals children
+ * depth-first before the parent, so a parent cannot reap-and-orphan its
+ * descendants mid-walk. `ps -o pid,ppid` is available in busybox.
+ */
+export const KILL_TREE_SH = `
+kt() {
+  for c in $(ps -o pid,ppid 2>/dev/null | awk -v p="$1" '$2==p{print $1}'); do kt "$c" "$2"; done
+  kill -"$2" "$1" 2>/dev/null
+}
+`
+
+/** True when pid or any descendant is still alive. */
+export const TREE_ALIVE_SH = `
+alive() {
+  kill -0 "$1" 2>/dev/null && return 0
+  for c in $(ps -o pid,ppid 2>/dev/null | awk -v p="$1" '$2==p{print $1}'); do alive "$c" && return 0; done
+  return 1
+}
+`
 
 export class DockerSubprocess {
   constructor(docker, containerId, defaultCwd = '/workspace') {
@@ -71,13 +97,7 @@ export class DockerSubprocess {
 
     const handle = {
       get pid() { return state.pid },
-      stdin: spec.stdio.stdin === 'pipe' ? new Writable({
-        write(chunk, _enc, cb) {
-          if (state.socket) state.socket.write(chunk)
-          cb()
-        },
-        final(cb) { state.socket?.end(); cb() },
-      }) : undefined,
+      stdin: undefined,
       stdout: stdoutPipe,
       stderr: stderrPipe,
       collected: {
@@ -103,13 +123,25 @@ export class DockerSubprocess {
 
   async #run(spec, pidFile, io) {
     const { state, stdoutCollect, stderrCollect, stdoutPipe, stderrPipe } = io
-    const wantStdin = spec.stdio.stdin === 'pipe' || typeof spec.stdio.stdin === 'object'
+    if (spec.stdio.stdin === 'pipe') {
+      throw new Error(
+        "stdin: 'pipe' is not implemented yet — it needs Docker's hijacked connection. " +
+        "Use stdin: { data } (batch) or 'ignore'.",
+      )
+    }
+    // Batch stdin is staged as a container-side file and redirected in, which
+    // avoids hijacking the exec connection entirely.
+    let stdinFile
+    if (typeof spec.stdio.stdin === 'object') {
+      stdinFile = `${pidFile}.stdin`
+      await this.docker.putArchiveFile(this.id, '/tmp', stdinFile.split('/').pop(), Buffer.from(spec.stdio.stdin.data, 'utf8'))
+    }
 
     const created = await this.docker.exec_create(this.id, {
-      Cmd: wrapArgv([...spec.argv], pidFile),
+      Cmd: wrapArgv([...spec.argv], pidFile, stdinFile),
       WorkingDir: spec.cwd ?? this.defaultCwd,
       Env: toDockerEnv(spec.env),
-      AttachStdin: wantStdin,
+      AttachStdin: false,
       AttachStdout: true,
       AttachStderr: true,
     })
@@ -151,13 +183,6 @@ export class DockerSubprocess {
       )
       req.on('error', reject)
       req.write(JSON.stringify({ Detach: false, Tty: false }))
-      if (typeof spec.stdio.stdin === 'object') {
-        req.on('socket', () => {})
-        setImmediate(() => {
-          state.socket?.write(spec.stdio.stdin.data)
-          state.socket?.end()
-        })
-      }
       req.end()
     })
 
@@ -170,7 +195,7 @@ export class DockerSubprocess {
         buf.spillPath = path
       }
     }
-    await this.#sh(`rm -f ${q(pidFile)}`)
+    await this.#sh(`rm -f ${q(pidFile)}${stdinFile ? ' ' + q(stdinFile) : ''}`)
 
     // Docker reports signal deaths as 128+signum.
     const SIGNALS = { 2: 'SIGINT', 9: 'SIGKILL', 15: 'SIGTERM' }
@@ -180,20 +205,23 @@ export class DockerSubprocess {
     return { exitCode, signal: null }
   }
 
-  /** SIGTERM -> graceMs -> SIGKILL, applied to the process GROUP. */
+  /** SIGTERM -> graceMs -> SIGKILL, applied depth-first to the whole tree. */
   #terminate(state, pidFile, graceMs) {
     if (state.terminating || state.exited) return
     state.terminating = true
-    const killGroup = (sig) => this.#sh(`P=$(cat ${q(pidFile)} 2>/dev/null) && [ -n "$P" ] && kill -${sig} -"$P" 2>/dev/null`).catch(() => {})
-    killGroup('TERM')
-    const timer = setTimeout(() => { if (!state.exited) killGroup('KILL') }, graceMs)
+    const killTree = (sig) =>
+      this.#sh(`${KILL_TREE_SH} P=$(cat ${q(pidFile)} 2>/dev/null); [ -n "$P" ] && kt "$P" ${sig}`).catch(() => {})
+    killTree('TERM')
+    const timer = setTimeout(() => { if (!state.exited) killTree('KILL') }, graceMs)
     timer.unref?.()
   }
 
   /** True when the whole tree is gone; false if the signal aborts first. */
   async #waitForExit(state, pidFile, signal) {
     while (!signal?.aborted) {
-      const r = await this.#sh(`P=$(cat ${q(pidFile)} 2>/dev/null); [ -n "$P" ] && kill -0 -"$P" 2>/dev/null && echo alive || echo gone`)
+      const r = await this.#sh(
+        `${TREE_ALIVE_SH} P=$(cat ${q(pidFile)} 2>/dev/null); if [ -n "$P" ] && alive "$P"; then echo alive; else echo gone; fi`,
+      )
       if (r.stdout.trim() === 'gone') return true
       await new Promise((r2) => setTimeout(r2, 50))
     }
