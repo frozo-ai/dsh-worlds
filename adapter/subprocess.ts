@@ -13,16 +13,20 @@ import type {
 import type { Context } from '@deepseek-ai/cordis'
 // @ts-expect-error -- JS engine, typed via engines.d.ts
 import { DockerSubprocess } from '../src/subprocess.mjs'
+// @ts-expect-error -- JS engine, typed via engines.d.ts
+import { DockerTerminal } from '../src/terminal.mjs'
 
 export class DockerSubprocessRuntime extends SubprocessRuntime {
   /** Non-private on purpose: cordis proxies services, and #private fields
    * are unreadable through a Proxy. */
   _engine: InstanceType<typeof DockerSubprocess> | undefined
+  _terminal: InstanceType<typeof DockerTerminal> | undefined
 
   constructor(ctx: Context) {
     super(ctx)
     this.ctx.inject(['world'], (scoped) => {
       this._engine = new DockerSubprocess(scoped.world.docker, scoped.world.containerId, scoped.world.workdir)
+      this._terminal = new DockerTerminal(scoped.world.docker, scoped.world.containerId)
     })
   }
 
@@ -42,16 +46,14 @@ export class DockerSubprocessRuntime extends SubprocessRuntime {
   }
 
   /**
-   * Not implemented. A PTY needs Docker's hijacked exec connection for
-   * bidirectional byte transport, foreground-group inspection, and resize —
-   * see SCOPE.md step 5. Failing loudly beats allocating a terminal that
-   * silently cannot be typed into.
+   * Allocate a real PTY inside the container over Docker's hijacked exec
+   * connection. With `Tty: true` the output stream carries raw bytes rather
+   * than the 8-byte stream framing, and foreground-group facts come from
+   * `/proc/<pid>/stat` field 8 (tpgid) inside the container.
    */
-  async spawnTerminal(_spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
-    throw new Error(
-      'dsh-worlds: spawnTerminal is not implemented yet — PTY support needs the ' +
-      "hijacked exec connection. Keep dsh-terminal on the local provider for now.",
-    )
+  async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
+    if (this._terminal === undefined) throw new Error('world not started')
+    return (await this._terminal.spawn(spec)) as unknown as SubprocessTerminalHandle
   }
 }
 

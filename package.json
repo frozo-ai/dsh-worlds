@@ -12,7 +12,8 @@
     "test": "node test/docker.test.mjs && node test/collect.test.mjs",
     "verify": "node test/live-docker.mjs",
     "verify:fs": "node test/live-fs.mjs",
-    "verify:subprocess": "node test/live-subprocess.mjs"
+    "verify:subprocess": "node test/live-subprocess.mjs",
+    "verify:terminal": "node test/live-terminal.mjs"
   },
   "keywords": [
     "dsh-plugin",

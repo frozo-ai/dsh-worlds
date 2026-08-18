@@ -206,7 +206,7 @@ Two runtime bugs that only a real boot could find:
 - **Path mirroring**: dsh passes the *host* workspace path as cwd, and the
   provider creates that path inside the container. Path-transparent and it
   works, but real workspace access needs a bind mount (`binds` in WorldConfig).
-- `spawnTerminal` still unimplemented (step 5).
+- ~~`spawnTerminal` unimplemented~~ **DONE — step 5 complete.**
 
 
 ## DURABILITY DEMO — PROVEN
@@ -241,3 +241,40 @@ world is addressed by a stable container name.
 5. **Alpine has no `bash`.** The bash executor invokes `bash` by name and
    busybox ships only `sh`. `DockerWorld` now provisions `bash` + `procps`
    (apk or apt) when the image lacks them, and fails loudly if it cannot.
+
+
+## Step 5 — PTY (`spawnTerminal`) DONE, 17 live checks
+
+`src/terminal.mjs`. Two things differ from the piped spawn path:
+1. `Tty: true` makes Docker emit **raw** bytes — the 8-byte stream framing is
+   absent, so `demux()` must NOT be applied.
+2. The connection must be **hijacked** (`Connection: Upgrade`) to carry input.
+   Both the `upgrade` and plain `response` paths are handled, since older
+   daemons answer without upgrading.
+
+Foreground facts come from `/proc/<pid>/stat` field 8 (tpgid) read inside the
+container. The parser counts fields *after* the final `)` because `comm` may
+itself contain spaces and parentheses — tested with `(weird (proc) name)`.
+
+**Documented limit:** `inputWaiting` is a heuristic — the group is reported as
+waiting when its leader sits in interruptible sleep (`S`). A blocked tty read
+and an idle sleep are indistinguishable from `/proc` alone.
+
+Verified live: real tty (`test -t 0`, `/dev/pts`), interactive round trip,
+`resize` -> `stty size` 40x132, `inspectForeground` -> pgid, and
+`signalForeground(SIGINT)` killing the foreground group **while the session
+shell survives** — correct job-control semantics.
+
+### End-to-end through dsh
+
+Overlay additions: `terminal`, `terminal-bash`, `tool-terminal` (the headless
+profile omits them). Two blockers found:
+- `terminal-bash` hard-requires `ctx.sandboxPolicy`, so `sandbox-policy` must
+  stay ENABLED — it only resolves policy, it enforces nothing.
+- Tools gate availability on the sandbox mode; the default `workspace-write`
+  hides the terminal tool. Forced to `danger-full-access`, which is the honest
+  mode: host confinement is meaningless when the process is not on this kernel.
+
+Chain proven — `terminal-bash/src/index.ts:113` is
+`spec => ctx.subprocess.spawnTerminal(spec)`, and the agent's `terminal_open`
+returned `/dev/pts/0` + Alpine 3.24.1 from a macOS host.

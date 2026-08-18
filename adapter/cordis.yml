@@ -29,8 +29,19 @@
 - id: sandbox
   disabled: true
 
+# sandbox-policy STAYS ENABLED: it only *resolves* per-session policy, it does
+# not enforce anything, and dsh-terminal-bash hard-requires ctx.sandboxPolicy.
+# The bare Docker fs provider accepts the policy argument and ignores it, which
+# is the documented behaviour for a non-sandboxing backend.
+#
+# Mode is forced to danger-full-access because HOST confinement is meaningless
+# here: the process does not run on this kernel. Tools gate their availability
+# on this mode, so leaving the default 'workspace-write' hides the terminal
+# tool. The real boundary is the container.
 - id: sandbox-policy
-  disabled: true
+  config:
+    mode: danger-full-access
+    workspaceRoot: !!js process.cwd()
 
 # bash-sandbox is the sandbox-consuming executor, loaded "instead of"
 # dsh-bash-local. Swap back to bash-local, which spawns through ctx.subprocess
@@ -72,3 +83,15 @@
     # to ctx.subprocess, so it lands in the container with no fork required.
     - id: bash-local
       name: '@deepseek-ai/dsh-bash-local'
+
+    # Persistent PTY terminals. terminal-bash allocates through
+    # ctx.subprocess.spawnTerminal -- now the Docker hijacked-exec PTY -- so
+    # these need no fork either. The headless profile omits them by default.
+    - id: terminal
+      name: '@deepseek-ai/dsh-terminal'
+
+    - id: terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
+
+    - id: tool-terminal
+      name: '@deepseek-ai/dsh-tool-terminal'

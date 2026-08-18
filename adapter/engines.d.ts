@@ -45,3 +45,13 @@ declare module '../src/subprocess.mjs' {
     spawn(spec: unknown): Record<string, unknown>
   }
 }
+
+declare module '../src/terminal.mjs' {
+  export class DockerTerminal {
+    constructor(docker: unknown, containerId: string)
+    spawn(spec: unknown): Promise<Record<string, unknown>>
+    resize(execId: string, rows: number, cols: number): Promise<void>
+  }
+  export function parseTpgid(statLine: string): number | undefined
+  export function parseState(statLine: string): string | undefined
+}
